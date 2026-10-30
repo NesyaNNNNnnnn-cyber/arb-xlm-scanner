@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: arb-xlm-scanner
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: CHAT_ID
+        sync: false
+      - key: SCAN_INTERVAL_SECONDS
+        value: "30"
+      - key: REPORT_HOUR_MSK
+        value: "21"
+      - key: REPORT_MINUTE_MSK
+        value: "0"
