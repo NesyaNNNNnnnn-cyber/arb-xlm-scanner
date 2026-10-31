@@ -16,7 +16,7 @@ CHAT_ID = os.getenv("CHAT_ID", "").strip()
 SCAN_INTERVAL = int(os.getenv("SCAN_INTERVAL_SECONDS", "30"))
 REPORT_HOUR = int(os.getenv("REPORT_HOUR_MSK", "21"))
 REPORT_MINUTE = int(os.getenv("REPORT_MINUTE_MSK", "0"))
-BYBIT_BASE = "https://api.bybit.com"
+OKX_BASE = "https://www.okx.com"
 TELEGRAM_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else ""
 
 app = Flask(__name__)
@@ -33,35 +33,39 @@ session = requests.Session()
 session.headers.update({"User-Agent": "ARB-XLM-Scanner/0.1"})
 
 
-def bybit_orderbook(symbol, limit=50):
+def okx_orderbook(symbol, limit=50):
     response = session.get(
-        f"{BYBIT_BASE}/v5/market/orderbook",
+        f"{OKX_BASE}/api/v5/market/books",
         params={
-            "category": "spot",
-            "symbol": symbol,
-            "limit": limit,
+            "instId": symbol,
+            "sz": limit,
         },
         timeout=10,
     )
 
     if response.status_code != 200:
         raise RuntimeError(
-            f"Bybit HTTP {response.status_code}: {response.text[:500]}"
+            f"OKX HTTP {response.status_code}: {response.text[:500]}"
         )
 
     payload = response.json()
 
-    if payload.get("retCode") != 0:
+    if payload.get("code") != "0":
         raise RuntimeError(
-            f"Bybit API error for {symbol}: {payload.get('retMsg')}"
+            f"OKX API error for {symbol}: {payload.get('msg')}"
         )
 
-    result = payload["result"]
-    bids = [(float(p), float(q)) for p, q in result.get("b", [])]
-    asks = [(float(p), float(q)) for p, q in result.get("a", [])]
+    data = payload.get("data", [])
+
+    if not data:
+        raise RuntimeError(f"Empty order book for {symbol}")
+
+    result = data[0]
+    bids = [(float(p), float(q)) for p, q, *_ in result.get("bids", [])]
+    asks = [(float(p), float(q)) for p, q, *_ in result.get("asks", [])]
 
     if not bids or not asks:
-        raise RuntimeError(f"Empty order book for {symbol}")
+        raise RuntimeError(f"Empty bids or asks for {symbol}")
 
     return {
         "symbol": symbol,
@@ -73,8 +77,8 @@ def bybit_orderbook(symbol, limit=50):
     } 
     
 def market_snapshot():
-    xrp = bybit_orderbook("XRPUSDT")
-    xlm = bybit_orderbook("XLMUSDT")
+    xrp = okx_orderbook("XRP-USDT")
+    xlm = okx_orderbook("XLM-USDT")
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "XRPUSDT": {
@@ -137,7 +141,7 @@ def handle_command(chat_id, text):
             "Привет! Это ARB XLM Scanner.\n"
             "Доступные команды:\n"
             "/status — состояние сканера\n"
-            "/scan — получить текущие котировки Bybit\n"
+            "/scan — получить текущие котировки OKX\n"
             "/help — помощь\n\n"
             "Сейчас работает только мониторинг публичных стаканов XRPUSDT и XLMUSDT. "
             "Сигналы о прибыли не отправляются, пока не подключён провайдер обмена XRP→XLM."
@@ -157,7 +161,7 @@ def handle_command(chat_id, text):
             send_message(chat_id, format_snapshot(snapshot))
         except Exception as exc:
             state["last_error"] = str(exc)
-            send_message(chat_id, f"Не удалось получить котировки Bybit: {exc}")
+            send_message(chat_id, f"Не удалось получить котировки OKX: {exc}")
     else:
         send_message(chat_id, "Неизвестная команда. Используй /help.")
 
@@ -214,7 +218,7 @@ def daily_reporter():
                     "ARB XLM Scanner — ежедневный отчёт\n"
                     f"Дата: {now:%d.%m.%Y}\n"
                     f"Последняя проверка: {state['last_scan'] or 'нет данных'}\n"
-                    "Режим: только рыночный мониторинг Bybit.\n"
+                    "Режим: только рыночный мониторинг OKX.\n"
                     "Подтверждённых арбитражных возможностей: нет данных — провайдер XRP→XLM не подключён.\n"
                     f"Ошибка: {state['last_error'] or 'нет'}"
                 )
