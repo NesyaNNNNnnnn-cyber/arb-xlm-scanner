@@ -36,18 +36,33 @@ session.headers.update({"User-Agent": "ARB-XLM-Scanner/0.1"})
 def bybit_orderbook(symbol, limit=50):
     response = session.get(
         f"{BYBIT_BASE}/v5/market/orderbook",
-        params={"category": "spot", "symbol": symbol, "limit": limit},
+        params={
+            "category": "spot",
+            "symbol": symbol,
+            "limit": limit,
+        },
         timeout=10,
     )
-    response.raise_for_status()
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Bybit HTTP {response.status_code}: {response.text[:500]}"
+        )
+
     payload = response.json()
+
     if payload.get("retCode") != 0:
-        raise RuntimeError(f"Bybit API error for {symbol}: {payload.get('retMsg')}")
+        raise RuntimeError(
+            f"Bybit API error for {symbol}: {payload.get('retMsg')}"
+        )
+
     result = payload["result"]
     bids = [(float(p), float(q)) for p, q in result.get("b", [])]
     asks = [(float(p), float(q)) for p, q in result.get("a", [])]
+
     if not bids or not asks:
         raise RuntimeError(f"Empty order book for {symbol}")
+
     return {
         "symbol": symbol,
         "best_bid": bids[0][0],
@@ -55,9 +70,8 @@ def bybit_orderbook(symbol, limit=50):
         "bids": bids,
         "asks": asks,
         "timestamp_ms": int(result.get("ts", 0)),
-    }
-
-
+    } 
+    
 def market_snapshot():
     xrp = bybit_orderbook("XRPUSDT")
     xlm = bybit_orderbook("XLMUSDT")
